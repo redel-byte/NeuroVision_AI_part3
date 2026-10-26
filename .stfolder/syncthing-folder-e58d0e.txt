@@ -1,0 +1,5 @@
+# This directory is a Syncthing folder marker.
+# Do not delete.
+
+folderID: pbfec-vxxy2
+created: 2026-10-26T11:09:54Z
