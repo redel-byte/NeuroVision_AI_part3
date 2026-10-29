@@ -1,0 +1,8 @@
+path: "C:/Users/Youcode/Documents/DEV_AI/sprint_1/NeuroVision_AI_part3/data/processed/neurovision_v1"
+train: images/train
+val: images/val
+test: images/test
+names:
+  0: Glioma
+  1: Meningioma
+  2: Pituitary
