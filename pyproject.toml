@@ -9,15 +9,25 @@ authors = [
 requires-python = ">=3.11"
 dependencies = [
     "apache-airflow>=3.3.2",
+    "fastapi>=0.136.3",
     "kagglehub>=1.0.3",
     "matplotlib>=3.11.2",
     "mlflow>=3.17.2",
     "numpy>=2.4.6",
     "opencv-python>=5.0.0.93",
     "pandas>=3.1.0",
+    "pillow>=13.0.0",
+    "python-multipart>=0.0.32",
     "seaborn>=0.13.2",
     "streamlit>=1.66.1",
+    "supervision>=0.31.3",
+    "torch>=2.15.0",
+    "ultralytics>=8.4.193",
+    "uvicorn>=0.54.0",
 ]
+
+[dependency-groups]
+dev = ["httpx>=0.28.1"]
 
 [project.scripts]
 neurovision-ai-part3 = "neurovision_ai_part3:main"

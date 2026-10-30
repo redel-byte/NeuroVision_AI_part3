@@ -8,5 +8,22 @@ wheels/
 
 # Virtual environments
 .venv
+/.venv-backups/
+/.stfolder/
 /AGENTS.md
 /PROJECT_MENTORING_GUIDE.md
+
+# Generated local detector outputs and label caches
+/runs/
+/artifacts/validation/
+/evaluation/
+*.cache
+
+# Local MLflow metadata and uploaded artifacts
+/mlflow.db
+/mlflow.db-*
+/mlartifacts/
+/mlruns/
+/notebooks/mlruns/
+/mlflow_tracking/
+/artifacts/mlflow_tracking/
