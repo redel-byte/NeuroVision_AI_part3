@@ -41,6 +41,14 @@ Le parcours va du contrôle des annotations YOLO jusqu'à l'exposition du modèl
 
 > **Note déploiement :** il est préférable d'isoler Airflow dans un environnement/service dédié, compatible avec ses contraintes d'installation, plutôt que de l'ajouter sans vérification à l'environnement d'entraînement GPU.
 
+### Checkpoints et Git LFS
+
+Les checkpoints `.pt` sont versionnés avec Git LFS. Installer Git LFS avant de
+cloner le dépôt et récupérer les objets LFS de la branche pour obtenir les vrais
+poids, notamment `models/best.pt`. Un petit fichier texte de pointeur LFS ne peut
+pas être chargé par YOLO. Les caches de labels, sorties locales répétées,
+sauvegardes d'environnement et données de suivi MLflow sont ignorés par Git.
+
 ## 3. Dataset
 
 **Nom :** MRI for Brain Tumor with Bounding Boxes  
@@ -263,12 +271,18 @@ Remplacer `baseline_n` par le run réellement sélectionné. Pour les futures it
 
 ## 9. MLflow : traçabilité et sélection du `champion`
 
+Le suivi manuel du notebook est implémenté dans
+`src/neurovision_ai_part3/mlflow_tracking.py` : fonctions simples pour les
+paramètres, métriques, historiques et artefacts. Voir le
+[guide de démarrage MLflow](docs/MLFLOW.md) pour Windows, Vast.ai et la vérification
+dans l'interface. Le packaging Registry et l'alias `champion` restent à construire.
+
 ### Démarrer le serveur local (exemple développement)
 
 ```bash
 uv run mlflow server \
   --backend-store-uri sqlite:///mlflow.db \
-  --default-artifact-root ./mlartifacts \
+  --serve-artifacts --artifacts-destination ./mlartifacts \
   --host 127.0.0.1 --port 5000
 ```
 
@@ -305,28 +319,41 @@ print(selected.version)
 
 La règle de promotion doit comparer des métriques **de validation** comparables et garder la version actuelle si le candidat ne franchit pas les seuils définis. Enregistrer la décision, les métriques et l'ancien/nouveau numéro de version.
 
-## 10. API FastAPI (contrat cible)
+## 10. API FastAPI (implémentation locale)
 
-L'API doit charger **une seule fois au démarrage** le modèle désigné par `models:/NeuroVisionBrainTumorDetector@champion` et répondre via :
+L'API dans `src/neurovision_ai_part3/api.py` charge **une seule fois au démarrage**
+le checkpoint local `models/best.pt`. Elle retourne son empreinte SHA-256 et les
+classes lues dans le modèle. Le chargement d'un modèle Registry via
+`models:/NeuroVisionBrainTumorDetector@champion` reste une étape future, après
+validation de la promotion. Voir le [guide API](docs/API.md) pour les requêtes,
+la configuration et les tests.
 
 | Méthode | Route | Comportement attendu |
 | --- | --- | --- |
-| GET | `/health` | Retourne l'état du service, du modèle, la version/alias si disponible |
+| GET | `/health` | Retourne l'état du modèle, le device, le checkpoint, son hash et les classes ; 503 si indisponible |
 | POST | `/predict` | `multipart/form-data` avec `file`, seuil optionnel `confidence` entre 0 et 1 ; retourne les détections en JSON |
 | GET | `/docs` | Documentation Swagger fournie par FastAPI |
 
-Règles d'entrée : types autorisés `.jpeg`, `.jpg`, `.bmp`, `.png` **et** contenu réellement décodable (ne pas faire confiance à l'extension seule) ; taille maximale configurable ; erreurs explicites `400` pour type non pris en charge, `422` pour fichier manquant/illisible ou paramètre invalide, `503` en cas de modèle non prêt (politique documentée).
+Règles d'entrée : types autorisés `.jpeg`, `.jpg`, `.bmp`, `.png` **et** contenu réellement décodable ; limites configurables (10 Mio et 16 millions de pixels par défaut) ; `400` pour extension non prise en charge, `413` pour limite dépassée, `422` pour fichier manquant/illisible ou paramètre invalide, `503` si le modèle ne peut pas être chargé.
 
 **Exemple de réponse illustratif (valeurs fictives)** :
 
 ```json
 {
-  "message": "1 région suspecte détectée",
-  "model_version": "3",
+  "message": "Detected 1 region(s).",
+  "model": {
+    "source": "local_checkpoint",
+    "checkpoint": "best.pt",
+    "sha256": "<empreinte SHA-256 du checkpoint>",
+    "classes": {"0": "Glioma", "1": "Meningioma", "2": "Pituitary"}
+  },
+  "image_width": 512,
+  "image_height": 512,
+  "confidence_threshold": 0.25,
   "detections": [
     {
       "class_id": 0,
-      "class_name": "example_class",
+      "class_name": "Glioma",
       "confidence": 0.91,
       "bbox_xyxy": [72, 44, 211, 188]
     }
@@ -334,15 +361,21 @@ Règles d'entrée : types autorisés `.jpeg`, `.jpg`, `.bmp`, `.png` **et** cont
 }
 ```
 
-Sans détection : `{"message": "aucune tumeur détectée", "detections": []}`. Le message signifie **aucune détection au seuil choisi**, et **non** l'absence cliniquement prouvée de tumeur.
+Sans détection, la réponse conserve les métadonnées et contient
+`"message": "No detections at this confidence threshold."` et `"detections": []`.
+Cela signifie **aucune détection au seuil choisi**, et **non** l'absence cliniquement prouvée de tumeur.
 
-**Commandes après implémentation du module FastAPI** :
+**Démarrer depuis la racine du dépôt, dans PowerShell** :
 
-```bash
-uv run uvicorn neurovision.api.main:app --host 127.0.0.1 --port 8000
-curl http://127.0.0.1:8000/health
-curl -X POST 'http://127.0.0.1:8000/predict?confidence=0.25' \
-  -F 'file=@data/samples/example.png;type=image/png'
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn neurovision_ai_part3.api:app --app-dir src --host 127.0.0.1 --port 8000
+```
+
+**Dans un second terminal** (remplacer le chemin de l'image) :
+
+```powershell
+curl.exe http://127.0.0.1:8000/health
+curl.exe -X POST "http://127.0.0.1:8000/predict?confidence=0.25" -F "file=@C:\path\to\mri.jpg"
 ```
 
 Accéder à la documentation sur <http://127.0.0.1:8000/docs>.
